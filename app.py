@@ -36,11 +36,33 @@ def build_dataset():
 
     for xlsx in base.rglob("*.xlsx"):
         ticker = xlsx.stem
-
         # get years
         _, years = load_sheet(xlsx, "Income Statement")
+
+
         if years is None:
-            continue
+           continue
+
+        pretax = grab_series(xlsx, "Income Statement", r"income (?:before|pre)[ -]tax")
+
+        taxcash = grab_series(xlsx, "Cash Flow", r"income taxes.*paid")
+
+        # compute effective tax rate per year (avoid divide‐by‐zero)
+        if pretax and taxcash:
+            tax_rate_series = [
+                (t / p) if p not in (0, None) else 0.0
+                for p, t in zip(pretax, taxcash)
+            ]
+        else:
+          # fallback to zero‐rate if either series is missing
+            tax_rate_series = [0.0] * len(years)
+
+
+        # # get years
+        #     _, years = load_sheet(xlsx, "Income Statement")
+
+        # if years is None:
+        #    continue
 
         # grab core series
         ebitda    = grab_series(xlsx, "Income Statement", r"earnings before.*ebitda")
@@ -70,10 +92,10 @@ def build_dataset():
         interest_expense = ie_is if ie_is is not None else (ie_cf or [0] * len(years))
 
         # assemble rows
-        for y, e, c, d, ca, v, t, nwc0, ie in zip(
+        for i ,(y, e, c, d, ca, v, t, nwc0, ie) in enumerate(zip(
             years, ebitda, capex, debt, cash, ev, taxes_cf,
             change_in_nwc, interest_expense
-        ):
+        )):
             rows.append({
                 "Ticker":          ticker,
                 "Year":            y,
@@ -85,6 +107,7 @@ def build_dataset():
                 "CashTaxesPaid":   t,
                 "ChangeNWC":       nwc0,
                 "InterestExpense": ie,
+                "tax_rate":         tax_rate_series[i],
             })
 
     # build DataFrame
@@ -94,33 +117,41 @@ def build_dataset():
 
     
     
-        # historical ΔDebt & ΔCash
+# historical ΔDebt & ΔCash
     df["ΔDebt"] = df.groupby("Ticker")["Debt"].diff().fillna(0)
     df["ΔCash"] = df.groupby("Ticker")["Cash"].diff().fillna(0)
 
-    # Unlevered Free Cash Flow (FCFF)
-    df["FCFF"] = df["EBITDA"] - df["CashTaxesPaid"] - df["ChangeNWC"] - df["CapEx"]
-
-    # Legacy Free Cash Flow (FCF)
-    #df["FCF"] = df["EBITDA"] - df["CashTaxesPaid"] - df["CapEx"]
-
-    # free cash flow including working-capital changes
-    df["FCF"] = (
+# 1) FCFF = EBITDA – CashTaxesPaid – ChangeNWC – CapEx
+    df["FCFF"] = (
     df["EBITDA"]
   - df["CashTaxesPaid"]
   - df["ChangeNWC"]
   - df["CapEx"]
 )
 
+# 2) FCFE = FCFF – (InterestExpense × (1–tax_rate)) + ΔDebt – ΔCash,
+#    using the per‐row tax_rate we built earlier
+    df["FCFE"] = (
+    df["FCFF"]
+  - df["InterestExpense"] * (1 - df["tax_rate"])
+  + df["ΔDebt"]
+  - df["ΔCash"]
+)
 
-    # Levered Free Cash Flow (FCFE)
-    tax_rate = 0.21
-    df["FCFE"] = df["FCFF"] - df["InterestExpense"] * (1 - tax_rate) + df["ΔDebt"] - df["ΔCash"]
+    # ── Free Cash Flow (FCF) including ΔNWC ────────────────────────────
+    df["FCF"] = (
+    df["EBITDA"]
+  - df["CashTaxesPaid"]
+  - df["ChangeNWC"]
+  - df["CapEx"]
+)
+ 
 
-    # EV/EBITDA
+# 3) EV/EBITDA
     df["EV/EBITDA"] = df["EV"] / df["EBITDA"].replace(0, pd.NA)
 
     return df
+
 
 
 # ─── 2) Page setup & CSS ───────────────────────────────────────────────────────
@@ -320,13 +351,14 @@ hist_metrics = [
     ("Cash",      "Cash",           "$ {:,.0f}"),
     ("ΔNWC",      "ChangeNWC",      "$ {:,.0f}"),
     ("Interest",  "InterestExpense","$ {:,.0f}"),
+    ("Tax Rate",  "tax_rate",    "{:.1%}"), 
 ]
 
 # first 5 always go on row 1, next 4 on row 2 (with one blank placeholder)
+# two rows of 5 metrics each
 first5 = hist_metrics[:5]
-rest4  = hist_metrics[5:]
-# pad to length 5
-rest5 = rest4 + [(None, None, None)]
+rest5  = hist_metrics[5:10]    # exactly the other five
+
 
 for ticker in sel_tickers:
     t_base = base[base.Ticker == ticker]
