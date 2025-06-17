@@ -4,6 +4,12 @@ import pandas as pd
 import plotly.express as px
 from pathlib import Path
 from scrape_ff5 import get_ff5_data_by_folder
+from regression_engine import compute_capm_beta
+from regression_engine import compute_ff5_betas
+import os
+from regression_engine import compute_ff5_betas
+
+
 # ─── 1) Streamlit page config ─────────────────────────────────
 st.set_page_config(page_title="🚀 Starship Finance Simulator", layout="wide")
 
@@ -168,6 +174,14 @@ if df.empty:
 # ─── 3) Sidebar: selectors & sliders ────────────────────────────────────────────
 tickers     = sorted(df["Ticker"].unique())
 sel_tickers = st.sidebar.multiselect("🔍 Companies", options=tickers, default=[])
+# ─── 4) Build shared color map ────────────────────────────────────────────────
+
+default_colors = px.colors.qualitative.Plotly
+color_map = {
+    t: default_colors[i % len(default_colors)]
+    for i, t in enumerate(sel_tickers)
+}
+
 if not sel_tickers:
     st.sidebar.info("Please select at least one company to continue.")
     st.stop()
@@ -184,6 +198,114 @@ sel_year = st.sidebar.slider(
     max_value=years_sorted[-1],
     value=years_sorted[-1]
 )
+########################
+    # ─── 3a) Choose Estimation Method ─────────────────────────────────────────────
+method = st.sidebar.radio(
+        "⚙️ Estimation Method",
+        options=["Historical", "FF-5", "CAPM"],
+        index=0,
+    )
+
+def ticker_to_region(ticker: str) -> str:
+        suffix = ticker.split(".")[-1].upper()
+        return "US" if suffix == "O" else suffix
+
+
+
+if method == "FF-5":
+        st.sidebar.markdown("### 🔢 Download FF-5 Factors")
+        if st.sidebar.button("📥 Fetch FF-5 Data"):
+            ff5_results: dict[str, pd.DataFrame] = {}
+            for ticker in sel_tickers:
+                folder = ticker_to_region(ticker)
+                with st.spinner(f"Downloading FF-5 for {ticker}…"):
+                    try:
+                        df_ff5 = get_ff5_data_by_folder(ticker, folder)
+                        ff5_results[ticker] = df_ff5
+                    except Exception as e:
+                        st.sidebar.error(f"❌ {ticker}: {e}")
+            if ff5_results:
+                st.sidebar.success("✅ All FF-5 data downloaded")
+                st.session_state["ff5"] = ff5_results
+                # ─── 3b) Compute & display FF-5 betas ──────────────────────────────────────────
+import os
+
+if "ff5" in st.session_state and st.session_state["ff5"]:
+    ff5_results = st.session_state["ff5"]
+
+    # Only recompute if we haven’t already run for this exact set of tickers:
+    if set(ff5_results) != set(st.session_state.get("ff5_betas", {})):
+        betas_by_ticker = {}
+        errors_by_ticker = {}
+
+        for ticker, ff5_df in ff5_results.items():
+            # load the pre-saved returns CSV
+            path = f"attached_assets/returns_{ticker.replace('.', '_')}.csv"
+            if not os.path.isfile(path):
+                st.sidebar.error(f"Missing returns file for {ticker}: {path}")
+                continue
+
+            returns_df = pd.read_csv(path, parse_dates=True, index_col=0)
+            stock_ret = returns_df["Return"]
+
+            # compute the five betas + residuals
+            res = compute_ff5_betas(stock_ret, ff5_df)
+            betas_by_ticker[ticker] = {
+                "Mkt-RF": res["market_beta"],
+                "SMB":    res["smb_beta"],
+                "HML":    res["hml_beta"],
+                "RMW":    res["rmw_beta"],
+                "CMA":    res["cma_beta"],
+            }
+            errors_by_ticker[ticker] = {
+                "r_squared": res["r_squared"],
+                "alpha":     res["alpha"],
+            }
+
+        st.session_state["ff5_betas"] = betas_by_ticker
+        st.session_state["ff5_errors"] = errors_by_ticker
+
+    # now render the beta chart
+    if st.session_state.get("ff5_betas"):
+        import plotly.graph_objects as go
+
+        fig = go.Figure()
+        for ticker, beta_dict in st.session_state["ff5_betas"].items():
+            fig.add_trace(
+                go.Scatter(
+                    x=list(beta_dict.keys()),
+                    y=list(beta_dict.values()),
+                    mode="lines+markers",
+                    name=ticker,
+                    line=dict(color=color_map[ticker]),   
+                    marker=dict(color=color_map[ticker]),
+                )
+            )
+
+        fig.update_layout(
+            title="FF-5 Factor Betas",
+            xaxis_title="Factor",
+            yaxis_title="β Coefficient",
+            legend_title="Ticker",
+        )
+       
+
+elif method == "CAPM":
+    st.sidebar.markdown("### 📈 Run CAPM Regression")
+    if st.sidebar.button("📥 Fetch Returns & Compute β"):
+            capm_results: dict[str, dict[str, float]] = {}
+            for ticker in sel_tickers:
+                with st.spinner(f"Fetching returns and regressing CAPM for {ticker}…"):
+                    try:
+                        beta, error = compute_capm_beta(ticker)
+                        capm_results[ticker] = {"beta": beta, "error": error}
+                    except Exception as e:
+                        st.sidebar.error(f"❌ {ticker}: {e}")
+            if capm_results:
+                st.sidebar.success("✅ CAPM betas computed")
+                st.session_state["capm"] = capm_results
+
+
 
 st.sidebar.markdown("### 🎛 Simulations")
 ebt_adj  = st.sidebar.slider("EBITDA Δ%", -50, 50, 0)
@@ -432,7 +554,7 @@ fig3d.update_layout(
 )
 
 # 7) render it
-st.plotly_chart(fig3d, use_container_width=True)
+st.plotly_chart(fig3d, use_container_width=True, key="ev_cube_chart")
 
 
 # ─── 7) EV/EBITDA & FCF Over Time ───────────────────────────────────────────────
@@ -441,7 +563,7 @@ time_df = df[df.Ticker.isin(sel_tickers)].copy()
 time_df["FCF"] = time_df["EBITDA"] - time_df["CapEx"]
 fig2 = px.line(
     time_df, x="Year", y=["FCF","EV/EBITDA"],
-    color="Ticker", markers=True,
+    color="Ticker", color_discrete_map=color_map, markers=True,
     template="plotly_dark",
     labels={
         "value":"FCF (USD) / EV/EBITDA (x)",
@@ -449,7 +571,7 @@ fig2 = px.line(
         "Ticker":"Company",
     },
 )
-st.plotly_chart(fig2, use_container_width=True)
+st.plotly_chart(fig2, use_container_width=True, key="ev_cube_chart2")
 
 # ─── 8) Data Table ─────────────────────────────────────────────────────────────
 st.markdown("### 📊 Data Table")
@@ -462,4 +584,18 @@ st.dataframe(
     ]],
     use_container_width=True, height=300
 )
+st.plotly_chart(fig, use_container_width=True,key="ff5_betas_chart")
 
+        # optional: show error table underneath
+df_err = pd.DataFrame.from_dict(st.session_state["ff5_errors"], orient="index")
+st.dataframe(df_err.style.format({"r_squared":"{:.2f}", "alpha":"{:.4f}"}))
+
+
+
+st.markdown(
+    """
+    *FF-5 factor betas data courtesy of the [Kenneth R. French Data Library](
+    https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/index.html).*
+    """,
+    unsafe_allow_html=True,
+)
