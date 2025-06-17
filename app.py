@@ -3,6 +3,14 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from pathlib import Path
+from scrape_ff5 import get_ff5_data_by_folder
+# ─── 1) Streamlit page config ─────────────────────────────────
+st.set_page_config(page_title="🚀 Starship Finance Simulator", layout="wide")
+
+# ─── 2) Inject external CSS ────────────────────────────────────
+with open("styles.css") as f:
+    css = f.read()
+st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 # ─── 1) Your existing loader/grabber ────────────────────────────────────────────
 YEAR_ROW = 10
@@ -151,87 +159,6 @@ def build_dataset():
     df["EV/EBITDA"] = df["EV"] / df["EBITDA"].replace(0, pd.NA)
 
     return df
-
-
-
-# ─── 2) Page setup & CSS ───────────────────────────────────────────────────────
-st.set_page_config(page_title="🚀 Starship Finance Simulator", layout="wide")
-st.markdown("""
-<style>
-  /* 1) Import a sci-fi font */
-  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&display=swap');
-
-  /* 2) Background & base text */
-  body {
-    background: radial-gradient(circle at center, #000011, #000);
-    color: #39ff14;
-    font-family: 'Orbitron', monospace;
-  }
-
-  /* 3) Make your metric cards wider and neon-glow */
-  .stMetric {
-  flex: 0 0 130px !important;
-  min-width: 130px !important;
-  max-width: 130px !important;
-
-  /* make every card the same height */
-  min-height: 113px !important;
-
-  /* your existing styles */
-  background: rgba(0, 0, 30, 0.8) !important;
-  border: 2px solid #0ff !important;
-  border-radius: 12px !important;
-  padding: 8px !important;
-  box-shadow: 0 0 8px #0ff, 0 0 16px #39ff14 !important;
-
-  /* center value+delta vertically */
-  display: flex !important;
-  flex-direction: column !important;
-  justify-content: center !important;
-}
-
-
-  /* Neon glow on the numbers */
-  .stMetric .value {
-    font-size: 1.6rem !important;
-    text-shadow: 0 0 4px #39ff14 !important;
-  }
-  .stMetric .delta {
-    font-size: 1.1rem !important;
-    text-shadow: 0 0 4px #0ff !important;
-  }
-
-  /* 4) Force each metric-row into a no-wrap, scrollable flex strip */
-  /* ─── Force each metric card to the same size ───────────────────────────────── */
-.stMetric {
-  flex: 0 0 220px !important;     /* exact width for every card */
-  min-width: 220px !important;
-  max-width: 220px !important;
-  margin: 0 !important;           /* reset any default margins */
-}
-
-/* ─── Evenly distribute the cards in each row ───────────────────────────────── */
-section[data-testid="metric-container"] > div {
-  display: flex !important;
-  flex-wrap: nowrap !important;
-  justify-content: space-evenly !important;
-  align-items: stretch !important;
-  gap: 16px !important;           /* space between cards */
-  overflow-x: auto !important;    /* keep horizontal scroll if viewport too narrow */
-  padding-bottom: 12px;           /* breathing room below */
-  margin-bottom: 24px;            /* space under each row heading */
-}
-
-
-  /* 5) Tweak slider labels */
-  .stSlider > div > div > label {
-    color: #0ff !important;
-  }
-</style>
-""", unsafe_allow_html=True)
-
-df = build_dataset()
-
 
 df = build_dataset()
 if df.empty:
@@ -535,3 +462,4 @@ st.dataframe(
     ]],
     use_container_width=True, height=300
 )
+
