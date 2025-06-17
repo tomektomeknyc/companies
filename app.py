@@ -10,6 +10,7 @@ import os
 from regression_engine import compute_ff5_betas
 
 
+
 # ─── 1) Streamlit page config ─────────────────────────────────
 st.set_page_config(page_title="🚀 Starship Finance Simulator", layout="wide")
 
@@ -72,12 +73,7 @@ def build_dataset():
             tax_rate_series = [0.0] * len(years)
 
 
-        # # get years
-        #     _, years = load_sheet(xlsx, "Income Statement")
-
-        # if years is None:
-        #    continue
-
+      
         # grab core series
         ebitda    = grab_series(xlsx, "Income Statement", r"earnings before.*ebitda")
         capex     = grab_series(xlsx, "Cash Flow",         r"capital expenditure|capex")
@@ -174,6 +170,18 @@ if df.empty:
 # ─── 3) Sidebar: selectors & sliders ────────────────────────────────────────────
 tickers     = sorted(df["Ticker"].unique())
 sel_tickers = st.sidebar.multiselect("🔍 Companies", options=tickers, default=[])
+
+# ── Reset FF-5 session state when the user picks a different set of tickers ──
+if "prev_sel_tickers" not in st.session_state:
+    # first run: record the initial selection
+    st.session_state["prev_sel_tickers"] = sel_tickers.copy()
+elif set(st.session_state["prev_sel_tickers"]) != set(sel_tickers):
+   
+    st.session_state.pop("ff5", None)
+
+    # update our record so we only do this once per change
+    st.session_state["prev_sel_tickers"] = sel_tickers.copy()
+
 # ─── 4) Build shared color map ────────────────────────────────────────────────
 
 default_colors = px.colors.qualitative.Plotly
@@ -206,9 +214,22 @@ method = st.sidebar.radio(
         index=0,
     )
 
+
 def ticker_to_region(ticker: str) -> str:
-        suffix = ticker.split(".")[-1].upper()
-        return "US" if suffix == "O" else suffix
+    parts = ticker.split(".")
+    if len(parts) == 1:
+        # no exchange suffix → default to US
+        return "US"
+
+    suffix = parts[-1].upper()
+    # map suffixes to your folder names
+    region_map = {
+        "AX": "AU",   # Australian tickers
+        "NZ": "NZ",   # New Zealand tickers
+        "DE": "DE",   # German tickers
+        "O":  "US",   # .O suffix → US
+    }
+    return region_map.get(suffix, "US")
 
 
 
@@ -227,10 +248,12 @@ if method == "FF-5":
             if ff5_results:
                 st.sidebar.success("✅ All FF-5 data downloaded")
                 st.session_state["ff5"] = ff5_results
-                # ─── 3b) Compute & display FF-5 betas ──────────────────────────────────────────
+                
 import os
+import plotly.graph_objects as go
 
-if "ff5" in st.session_state and st.session_state["ff5"]:
+# ─── 3b) Compute & display FF-5 betas ──────────────────────────────────────────
+if method == "FF-5" and "ff5" in st.session_state and st.session_state["ff5"]:
     ff5_results = st.session_state["ff5"]
 
     # Only recompute if we haven’t already run for this exact set of tickers:
@@ -265,54 +288,31 @@ if "ff5" in st.session_state and st.session_state["ff5"]:
         st.session_state["ff5_betas"] = betas_by_ticker
         st.session_state["ff5_errors"] = errors_by_ticker
 
-    # now render the beta chart
-    if st.session_state.get("ff5_betas"):
-        import plotly.graph_objects as go
+   
 
-        fig = go.Figure()
-        for ticker, beta_dict in st.session_state["ff5_betas"].items():
-            fig.add_trace(
-                go.Scatter(
-                    x=list(beta_dict.keys()),
-                    y=list(beta_dict.values()),
-                    mode="lines+markers",
-                    name=ticker,
-                    line=dict(color=color_map[ticker]),   
-                    marker=dict(color=color_map[ticker]),
-                )
-            )
-
-        fig.update_layout(
-            title="FF-5 Factor Betas",
-            xaxis_title="Factor",
-            yaxis_title="β Coefficient",
-            legend_title="Ticker",
-        )
-       
-
+# ─── 3c) CAPM regression ─────────────────────────────────────────────────────────
 elif method == "CAPM":
     st.sidebar.markdown("### 📈 Run CAPM Regression")
     if st.sidebar.button("📥 Fetch Returns & Compute β"):
-            capm_results: dict[str, dict[str, float]] = {}
-            for ticker in sel_tickers:
-                with st.spinner(f"Fetching returns and regressing CAPM for {ticker}…"):
-                    try:
-                        beta, error = compute_capm_beta(ticker)
-                        capm_results[ticker] = {"beta": beta, "error": error}
-                    except Exception as e:
-                        st.sidebar.error(f"❌ {ticker}: {e}")
-            if capm_results:
-                st.sidebar.success("✅ CAPM betas computed")
-                st.session_state["capm"] = capm_results
-
-
+        capm_results: dict[str, dict[str, float]] = {}
+        for ticker in sel_tickers:
+            with st.spinner(f"Fetching returns and regressing CAPM for {ticker}…"):
+                try:
+                    beta, error = compute_capm_beta(ticker)
+                    capm_results[ticker] = {"beta": beta, "error": error}
+                except Exception as e:
+                    st.sidebar.error(f"❌ {ticker}: {e}")
+        if capm_results:
+            st.sidebar.success("✅ CAPM betas computed")
+            st.session_state["capm"] = capm_results
+#########
 
 st.sidebar.markdown("### 🎛 Simulations")
 ebt_adj  = st.sidebar.slider("EBITDA Δ%", -50, 50, 0)
 cpx_adj  = st.sidebar.slider("CapEx Δ%",  -50, 50, 0)
 debt_adj = st.sidebar.slider("Debt Δ%",   -50, 50, 0)
 cash_adj = st.sidebar.slider("Cash Δ%",   -50, 50, 0)
-nwc_adj = st.sidebar.slider("NWC Δ%", -50, 50, 0)
+nwc_adj  = st.sidebar.slider("NWC Δ%", -50, 50, 0)
 
 # ─── compute the exact historical EV/EBITDA for this year
 base = df.query("Year == @sel_year and Ticker in @sel_tickers").copy()
@@ -355,11 +355,17 @@ if base.empty:
     st.stop()
 
 sim = base.copy()
-for col, pct in [("EBITDA", ebt_adj),
-                 ("CapEx",  cpx_adj),
-                 ("Debt",   debt_adj),
-                 ("Cash",   cash_adj)]:
+# adjust everything except Cash multiplicatively
+for col, pct in [
+    ("EBITDA", ebt_adj),
+    ("CapEx",  cpx_adj),
+    ("Debt",   debt_adj),
+]:
     sim[col] = sim[col] * (1 + pct / 100)
+
+# now adjust Cash so +% always moves the balance toward +∞
+sim["Cash"] = base["Cash"] + base["Cash"].abs() * (cash_adj / 100)
+
 
 # apply the NWC % slider BEFORE OCF
 sim["ChangeNWC"]      = base["ChangeNWC"] * (1 + nwc_adj / 100)
@@ -584,14 +590,58 @@ st.dataframe(
     ]],
     use_container_width=True, height=300
 )
-st.plotly_chart(fig, use_container_width=True,key="ff5_betas_chart")
 
-        # optional: show error table underneath
-df_err = pd.DataFrame.from_dict(st.session_state["ff5_errors"], orient="index")
-st.dataframe(df_err.style.format({"r_squared":"{:.2f}", "alpha":"{:.4f}"}))
-
+# ─── 9) FF-5 Betas & Errors (only if we’ve run FF-5) ──────────────────────
+import plotly.graph_objects as go
+import pandas as pd
 
 
+# ─── 9) FF-5 Betas & Errors (only after you Fetch FF-5 Data) ──────────────
+if method == "FF-5" and st.session_state.get("ff5_betas"):
+    # pull in all stored betas/errors
+    all_betas  = st.session_state["ff5_betas"]
+    all_errors = st.session_state["ff5_errors"]
+
+    # keep only those tickers still selected
+    betas  = {t: all_betas[t]  for t in sel_tickers if t in all_betas}
+    errors = {t: all_errors[t] for t in sel_tickers if t in all_errors}
+
+    # errors table (only if there’s something to show)
+    if errors:
+        st.markdown("#### FF-5 Regression Errors")
+        df_err = pd.DataFrame.from_dict(errors, orient="index")
+        st.dataframe(df_err.style.format({
+            "r_squared":"{:.2f}",
+            "alpha":    "{:.4f}"
+        }))
+
+    # betas chart (only if there’s something to show)
+    if betas:
+        st.markdown("#### FF-5 Factor Betas")
+        fig = go.Figure()
+        for ticker, beta_dict in betas.items():
+            fig.add_trace(
+                go.Scatter(
+                    x=list(beta_dict.keys()),
+                    y=list(beta_dict.values()),
+                    mode="lines+markers",
+                    name=ticker,
+                    line=dict(color=color_map[ticker]),
+                    marker=dict(color=color_map[ticker]),
+                )
+            )
+        fig.update_layout(
+            xaxis_title="Factor",
+            yaxis_title="β Coefficient",
+            legend_title="Ticker",
+            margin=dict(t=20),
+            template="plotly_dark",
+        )
+        st.plotly_chart(fig, use_container_width=True, key="ff5_betas_chart")
+
+
+
+# ─── 10) Footer ────────────────────────────────────────────────────────────
 st.markdown(
     """
     *FF-5 factor betas data courtesy of the [Kenneth R. French Data Library](
@@ -599,3 +649,5 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
