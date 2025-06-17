@@ -1,0 +1,60 @@
+# stock_returns.py
+import refinitiv.dataplatform.eikon as ek
+import pandas as pd
+from datetime import datetime, timedelta
+from pathlib import Path
+from dotenv import load_dotenv
+import os
+
+# Load API key from .env
+load_dotenv()
+API_KEY = os.getenv("REFINITIV_APP_KEY")
+if not API_KEY:
+    raise EnvironmentError("REFINITIV_APP_KEY not found in .env")
+
+ek.set_app_key(API_KEY)
+
+# ─── Fetch Daily Returns ──────────────────────────────────────────────────────
+def fetch_daily_returns(ticker: str, years: int = 10) -> pd.DataFrame:
+    end_date = datetime.today()
+    start_date = end_date - timedelta(days=365 * years)
+
+    df = ek.get_timeseries(
+        rics=ticker,
+        fields="CLOSE",
+        start_date=start_date.strftime("%Y-%m-%d"),
+        end_date=end_date.strftime("%Y-%m-%d"),
+        interval="daily"
+    )
+
+    if df is None or df.empty:
+        raise ValueError(f"No data returned for {ticker}")
+
+    df["Return"] = df["CLOSE"].pct_change()
+    df.dropna(subset=["Return"], inplace=True)
+
+    return df
+
+# ─── Save to CSV ──────────────────────────────────────────────────────────────
+def save_returns_to_csv(ticker: str, df: pd.DataFrame):
+    Path("attached_assets").mkdir(exist_ok=True)
+    path = f"attached_assets/returns_{ticker.replace('.', '_')}.csv"
+    df.to_csv(path)
+    print(f"✅ Saved returns to: {path}")
+    return path
+
+# ─── Main Function to Loop Through Tickers ────────────────────────────────────
+def main():
+    tickers = ["CSL.AX", "FLT.AX", "SEK.AX", "WTC.AX", "XRO.AX","BOSSn.DE",
+               "DHLn.DE","HFGG.DE","KGX.DE","SHLG.DE","TMV.DE","AIR.NZ","FBU.NZ","FCG.NZ",
+                "MEL.NZ", "ADSK.O","DG","HSY","INTU.O","PYPL.O","URI" ]  # Add any more tickers
+    for ticker in tickers:
+        try:
+            df = fetch_daily_returns(ticker)
+            save_returns_to_csv(ticker, df)
+        except Exception as e:
+            print(f"❌ Failed for {ticker}: {e}")
+
+# ─── Run If Standalone ────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    main()
