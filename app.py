@@ -8,6 +8,7 @@ from regression_engine import compute_capm_beta
 from regression_engine import compute_ff5_betas
 import os
 from regression_engine import compute_ff5_betas
+import plotly.graph_objects as go
 
 
 
@@ -167,20 +168,32 @@ if df.empty:
     st.error("❌ No data found. Check your folders/sheets.")
     st.stop()
 
-# ─── 3) Sidebar: selectors & sliders ────────────────────────────────────────────
+# ─── 3) Sidebar: selectors & sliders ─────────────────────────────────────────────
 tickers     = sorted(df["Ticker"].unique())
-sel_tickers = st.sidebar.multiselect("🔍 Companies", options=tickers, default=[])
+sel_tickers = st.sidebar.multiselect("🔎 Companies", options=tickers, default=[])
 
-# ── Reset FF-5 session state when the user picks a different set of tickers ──
+
+# Pick a palette and assign each ticker a fixed color:
+default_colors = px.colors.qualitative.Plotly
+color_map = {
+    t: default_colors[i % len(default_colors)]
+    for i, t in enumerate(sel_tickers)
+}
+
+
+# ─── Reset only the *removed* tickers from FF-5 state, leave the rest intact ─────────
 if "prev_sel_tickers" not in st.session_state:
-    # first run: record the initial selection
-    st.session_state["prev_sel_tickers"] = sel_tickers.copy()
-elif set(st.session_state["prev_sel_tickers"]) != set(sel_tickers):
-   
-    st.session_state.pop("ff5", None)
+    st.session_state.prev_sel_tickers = sel_tickers.copy()
+elif set(st.session_state.prev_sel_tickers) != set(sel_tickers):
+    removed = set(st.session_state.prev_sel_tickers) - set(sel_tickers)
+    # remove only those tickers from the two FF-5 dicts:
+    for t in removed:
+        st.session_state.get("ff5_betas", {}).pop(t, None)
+        st.session_state.get("ff5_errors", {}).pop(t, None)
+        st.session_state.get("ff5", {}).pop(t, None)
+    # update our record
+    st.session_state.prev_sel_tickers = sel_tickers.copy()
 
-    # update our record so we only do this once per change
-    st.session_state["prev_sel_tickers"] = sel_tickers.copy()
 
 # ─── 4) Build shared color map ────────────────────────────────────────────────
 
@@ -206,6 +219,11 @@ sel_year = st.sidebar.slider(
     max_value=years_sorted[-1],
     value=years_sorted[-1]
 )
+st.sidebar.markdown(
+    f"ℹ️ Note: some tickers (e.g. AIR.NZ) only have data through 2024. "
+    "Move the slider down to see their multiples."
+)
+
 ########################
     # ─── 3a) Choose Estimation Method ─────────────────────────────────────────────
 method = st.sidebar.radio(
@@ -253,12 +271,22 @@ import os
 import plotly.graph_objects as go
 
 # ─── 3b) Compute & display FF-5 betas ──────────────────────────────────────────
-if method == "FF-5" and "ff5" in st.session_state and st.session_state["ff5"]:
+if method == "FF-5" and "ff5" in st.session_state:
+    # pull the raw FF-5 Data dict out of session
     ff5_results = st.session_state["ff5"]
 
-    # Only recompute if we haven’t already run for this exact set of tickers:
+    # now compare the ticker sets to decide whether to recompute
     if set(ff5_results) != set(st.session_state.get("ff5_betas", {})):
-        betas_by_ticker = {}
+        # Step 1: pull in & annualize FF-5 risk-free rate & market premium
+        sample_ff5     = next(iter(ff5_results.values()))
+        sample_ff5     = sample_ff5.apply(lambda col: pd.to_numeric(col, errors="coerce"))
+        monthly_rf     = sample_ff5["RF"].mean()
+        monthly_mktrf  = sample_ff5["Mkt-RF"].mean()
+        rf_annual      = (1 + monthly_rf)   ** 12 - 1
+        mktprem_annual = (1 + monthly_mktrf) ** 12 - 1
+
+        # Step 2: compute a fresh set of betas + errors
+        betas_by_ticker  = {}
         errors_by_ticker = {}
 
         for ticker, ff5_df in ff5_results.items():
@@ -269,7 +297,7 @@ if method == "FF-5" and "ff5" in st.session_state and st.session_state["ff5"]:
                 continue
 
             returns_df = pd.read_csv(path, parse_dates=True, index_col=0)
-            stock_ret = returns_df["Return"]
+            stock_ret  = returns_df["Return"]
 
             # compute the five betas + residuals
             res = compute_ff5_betas(stock_ret, ff5_df)
@@ -285,10 +313,9 @@ if method == "FF-5" and "ff5" in st.session_state and st.session_state["ff5"]:
                 "alpha":     res["alpha"],
             }
 
-        st.session_state["ff5_betas"] = betas_by_ticker
+        # stash them in session_state
+        st.session_state["ff5_betas"]  = betas_by_ticker
         st.session_state["ff5_errors"] = errors_by_ticker
-
-   
 
 # ─── 3c) CAPM regression ─────────────────────────────────────────────────────────
 elif method == "CAPM":
@@ -591,53 +618,92 @@ st.dataframe(
     use_container_width=True, height=300
 )
 
-# ─── 9) FF-5 Betas & Errors (only if we’ve run FF-5) ──────────────────────
-import plotly.graph_objects as go
-import pandas as pd
+# ─── 9 & 10) FF-5 Betas, Errors & WACC (always render if there’s at least one β) ─────────────────────
+if method == "FF-5":
+    # 9-0) grab all cached betas/errors
+    all_betas  = st.session_state.get("ff5_betas", {})
+    all_errors = st.session_state.get("ff5_errors", {})
 
-
-# ─── 9) FF-5 Betas & Errors (only after you Fetch FF-5 Data) ──────────────
-if method == "FF-5" and st.session_state.get("ff5_betas"):
-    # pull in all stored betas/errors
-    all_betas  = st.session_state["ff5_betas"]
-    all_errors = st.session_state["ff5_errors"]
-
-    # keep only those tickers still selected
+    # 9-1) filter for the tickers the user actually selected
     betas  = {t: all_betas[t]  for t in sel_tickers if t in all_betas}
     errors = {t: all_errors[t] for t in sel_tickers if t in all_errors}
 
-    # errors table (only if there’s something to show)
+    # 9-2) Regression‐errors table
     if errors:
         st.markdown("#### FF-5 Regression Errors")
         df_err = pd.DataFrame.from_dict(errors, orient="index")
         st.dataframe(df_err.style.format({
             "r_squared":"{:.2f}",
-            "alpha":    "{:.4f}"
+            "alpha":    "{:.4f}",
         }))
 
-    # betas chart (only if there’s something to show)
+    # 9-3) β-chart (use same colors as your other plots)
     if betas:
         st.markdown("#### FF-5 Factor Betas")
         fig = go.Figure()
-        for ticker, beta_dict in betas.items():
-            fig.add_trace(
-                go.Scatter(
-                    x=list(beta_dict.keys()),
-                    y=list(beta_dict.values()),
-                    mode="lines+markers",
-                    name=ticker,
-                    line=dict(color=color_map[ticker]),
-                    marker=dict(color=color_map[ticker]),
-                )
-            )
+        for ticker, bdict in betas.items():
+            fig.add_trace(go.Scatter(
+                x=list(bdict.keys()),
+                y=list(bdict.values()),
+                mode="lines+markers",
+                name=ticker,
+                line  = dict(color=color_map[ticker]),
+                marker= dict(color=color_map[ticker]),
+            ))
         fig.update_layout(
+            title="FF-5 Factor Betas",
             xaxis_title="Factor",
             yaxis_title="β Coefficient",
             legend_title="Ticker",
-            margin=dict(t=20),
-            template="plotly_dark",
         )
         st.plotly_chart(fig, use_container_width=True, key="ff5_betas_chart")
+
+    # 10) WACC by company (only if there’s at least one β)
+    if betas:
+        # 10-0) annualize RF & market premium
+        ff5_results    = st.session_state["ff5"]
+        sample_ff5     = next(iter(ff5_results.values()))
+        sample_ff5     = sample_ff5.apply(lambda col: pd.to_numeric(col, errors="coerce"))
+        monthly_rf     = sample_ff5["RF"].mean()
+        monthly_mktrf  = sample_ff5["Mkt-RF"].mean()
+        rf_annual      = (1 + monthly_rf)   ** 12 - 1
+        mktprem_annual = (1 + monthly_mktrf) ** 12 - 1
+
+        # compute WACC
+        wacc_rows = []
+        for t in betas.keys():               # only loop tickers for which you have betas
+            sub = df.query("Ticker == @t and Year == @sel_year")
+            if sub.empty:
+                continue
+            row = sub.iloc[0]
+
+            β     = betas[t]["Mkt-RF"]
+            Re    = rf_annual + β * mktprem_annual
+            Rd    = abs(row["InterestExpense"]) / row["Debt"] if row["Debt"] else 0.0
+            Rd_at = Rd * (1 - row["tax_rate"])
+            netD  = row["Debt"] - row["Cash"]
+            E_val = row["EV"] - netD
+            tot   = (E_val + netD) or 1.0
+            wE    = E_val / tot
+            wD    = netD / tot
+            wacc  = wE * Re + wD * Rd_at
+
+            wacc_rows.append({
+                "Ticker":   t,
+                "Re (%)":   f"{Re*100:.2f}",
+                "Rdₐₜ (%)": f"{Rd_at*100:.2f}",
+                "wE (%)":   f"{wE*100:.1f}",
+                "wD (%)":   f"{wD*100:.1f}",
+                "WACC (%)": f"{wacc*100:.2f}",
+            })
+
+        if wacc_rows:
+            wacc_df = pd.DataFrame(wacc_rows).set_index("Ticker")
+            st.markdown("#### 🧮 WACC by Company")
+            st.dataframe(wacc_df)
+# ── end FF-5 Betas, Errors & WACC block ─────────────────────────────────
+
+
 
 
 
@@ -646,6 +712,9 @@ st.markdown(
     """
     *FF-5 factor betas data courtesy of the [Kenneth R. French Data Library](
     https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/index.html).*
+
+    Github: https://github.com/tomektomeknyc/companies
+
     """,
     unsafe_allow_html=True,
 )
