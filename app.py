@@ -1,5 +1,12 @@
 # app.py
 import streamlit as st
+
+st.set_page_config(
+    page_title="My Companies App",
+    layout="wide",              # ← use the extra horizontal real-estate
+    initial_sidebar_state="auto"
+)
+
 import pandas as pd
 import plotly.express as px
 from pathlib import Path
