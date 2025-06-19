@@ -182,3 +182,21 @@
   overflow-x: auto !important;
 }
 
+/* ─── 99) Responsive “block-container” ───────────────────────────────────── */
+/* allow the main content to flex with the window, up to a max width */
+.block-container {
+  width: 100% !important;       /* let it shrink below 1 300px */
+  max-width: 1300px !important; /* but never grow beyond 1 300px */
+  margin-left: auto !important; /* center on wide screens */
+  margin-right: auto !important;
+  padding-left: 8px !important; /* a little breathing room */
+  padding-right: 8px !important;
+}
+
+/* on very narrow viewports, give a touch more side padding */
+@media (max-width: 800px) {
+  .block-container {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
