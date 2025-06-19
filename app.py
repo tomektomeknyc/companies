@@ -255,71 +255,75 @@ def ticker_to_region(ticker: str) -> str:
 
 
 
+# ─── FF-5: download, compute betas & errors, then WACC ─────────────────
 if method == "FF-5":
-        st.sidebar.markdown("### 🔢 Download FF-5 Factors")
-        if st.sidebar.button("📥 Fetch FF-5 Data"):
-            ff5_results: dict[str, pd.DataFrame] = {}
-            for ticker in sel_tickers:
-                folder = ticker_to_region(ticker)
-                with st.spinner(f"Downloading FF-5 for {ticker}…"):
-                    try:
-                        df_ff5 = get_ff5_data_by_folder(ticker, folder)
-                        ff5_results[ticker] = df_ff5
-                    except Exception as e:
-                        st.sidebar.error(f"❌ {ticker}: {e}")
-            if ff5_results:
-                st.sidebar.success("✅ All FF-5 data downloaded")
-                st.session_state["ff5"] = ff5_results
-                
-import os
-import plotly.graph_objects as go
+    st.sidebar.markdown("### 🔢 Download FF-5 Factors")
+    if st.sidebar.button("📥 Fetch FF-5 Data"):
+        ff5_results: dict[str, pd.DataFrame] = {}
+        for ticker in sel_tickers:
+            folder = ticker_to_region(ticker)
+            with st.spinner(f"Downloading FF-5 for {ticker}…"):
+                try:
+                    df_ff5 = get_ff5_data_by_folder(ticker, folder)
+                    ff5_results[ticker] = df_ff5
+                except Exception as e:
+                    st.sidebar.error(f"❌ {ticker}: {e}")
+        if ff5_results:
+            st.sidebar.success("✅ All FF-5 data downloaded")
+            st.session_state["ff5"] = ff5_results
 
-# ─── 3b) Compute & display FF-5 betas ──────────────────────────────────────────
-if method == "FF-5" and "ff5" in st.session_state:
-    # pull the raw FF-5 Data dict out of session
-    ff5_results = st.session_state["ff5"]
+    import os
 
-    # now compare the ticker sets to decide whether to recompute
-    if set(ff5_results) != set(st.session_state.get("ff5_betas", {})):
-        # Step 1: pull in & annualize FF-5 risk-free rate & market premium
-        sample_ff5     = next(iter(ff5_results.values()))
-        sample_ff5     = sample_ff5.apply(lambda col: pd.to_numeric(col, errors="coerce"))
-        monthly_rf     = sample_ff5["RF"].mean()
-        monthly_mktrf  = sample_ff5["Mkt-RF"].mean()
-        rf_annual      = (1 + monthly_rf)   ** 12 - 1
-        mktprem_annual = (1 + monthly_mktrf) ** 12 - 1
+    # Only proceed if we have FF-5 data in session
+    if "ff5" in st.session_state:
+        ff5_results = st.session_state["ff5"]
 
-        # Step 2: compute a fresh set of betas + errors
-        betas_by_ticker  = {}
-        errors_by_ticker = {}
+        # Recompute betas & errors only when the ticker set changes
+        if set(ff5_results) != set(st.session_state.get("ff5_betas", {})):
+            # 1) Annualize RF & market premium
+            sample_ff5     = next(iter(ff5_results.values()))
+            sample_ff5     = sample_ff5.apply(lambda col: pd.to_numeric(col, errors="coerce"))
+            monthly_rf    = sample_ff5["RF"].mean()    / 100
+            monthly_mktrf = sample_ff5["Mkt-RF"].mean() / 100
 
-        for ticker, ff5_df in ff5_results.items():
-            # load the pre-saved returns CSV
-            path = f"attached_assets/returns_{ticker.replace('.', '_')}.csv"
-            if not os.path.isfile(path):
-                st.sidebar.error(f"Missing returns file for {ticker}: {path}")
-                continue
+            rf_annual      = (1 + monthly_rf)   ** 12 - 1
+            mktprem_annual = (1 + monthly_mktrf) ** 12 - 1
 
-            returns_df = pd.read_csv(path, parse_dates=True, index_col=0)
-            stock_ret  = returns_df["Return"]
+            # 2) Compute fresh betas & regression errors
+            betas_by_ticker  = {}
+            errors_by_ticker = {}
+            for ticker, ff5_df in ff5_results.items():
+                path = f"attached_assets/returns_{ticker.replace('.', '_')}.csv"
+                if not os.path.isfile(path):
+                    st.sidebar.error(f"Missing returns file for {ticker}: {path}")
+                    continue
+                returns_df = pd.read_csv(path, parse_dates=True, index_col=0)
+                stock_ret  = returns_df["Return"]
+                res = compute_ff5_betas(stock_ret, ff5_df)
+                betas_by_ticker[ticker] = {
+                    "Mkt-RF": res["market_beta"],
+                    "SMB":    res["smb_beta"],
+                    "HML":    res["hml_beta"],
+                    "RMW":    res["rmw_beta"],
+                    "CMA":    res["cma_beta"],
+                }
+                errors_by_ticker[ticker] = {
+                    "r_squared": res["r_squared"],
+                    "alpha":     res["alpha"],
+                }
 
-            # compute the five betas + residuals
-            res = compute_ff5_betas(stock_ret, ff5_df)
-            betas_by_ticker[ticker] = {
-                "Mkt-RF": res["market_beta"],
-                "SMB":    res["smb_beta"],
-                "HML":    res["hml_beta"],
-                "RMW":    res["rmw_beta"],
-                "CMA":    res["cma_beta"],
-            }
-            errors_by_ticker[ticker] = {
-                "r_squared": res["r_squared"],
-                "alpha":     res["alpha"],
-            }
+            # 3) Store in session
+            st.session_state["ff5_betas"]  = betas_by_ticker
+            st.session_state["ff5_errors"] = errors_by_ticker
 
-        # stash them in session_state
-        st.session_state["ff5_betas"]  = betas_by_ticker
-        st.session_state["ff5_errors"] = errors_by_ticker
+        # Pull our computed betas back out
+           # betas = st.session_state.get("ff5_betas", {})
+            
+
+
+            # Only flash “recalculating” if slider‐year really changed
+            last_year   = st.session_state.get("last_year_wacc")
+            do_message  = (last_year is not None and last_year != sel_year)
 
 # ─── 3c) CAPM regression ─────────────────────────────────────────────────────────
 elif method == "CAPM":
@@ -668,8 +672,8 @@ if method == "FF-5":
         ff5_results    = st.session_state["ff5"]
         sample_ff5     = next(iter(ff5_results.values()))
         sample_ff5     = sample_ff5.apply(lambda col: pd.to_numeric(col, errors="coerce"))
-        monthly_rf     = sample_ff5["RF"].mean()
-        monthly_mktrf  = sample_ff5["Mkt-RF"].mean()
+        monthly_rf     = sample_ff5["RF"].mean() / 100
+        monthly_mktrf  = sample_ff5["Mkt-RF"].mean() / 100
         rf_annual      = (1 + monthly_rf)   ** 12 - 1
         mktprem_annual = (1 + monthly_mktrf) ** 12 - 1
 
@@ -678,56 +682,59 @@ if method == "FF-5":
         do_message = (last_year is not None and last_year != sel_year)
         placeholders = []
 
+        # ── Build the WACC table ─────────────────────────────────────────────────────
         wacc_rows = []
-        for t in betas.keys():     
-        # only loop tickers for which you have betas
-        # if year changed, flash one line per ticker
+
+        for t, beta_dict in betas.items():
+            # only flash once per slider‐move
             if do_message:
                 st.markdown(
                     f'<div class="flash-message">🔍 Recalculating WACC for {t} at Year={sel_year}</div>',
                     unsafe_allow_html=True
                 )
 
-
             sub = df.query("Ticker == @t and Year == @sel_year")
-
-           
             if sub.empty:
-                    continue
+                continue
             row = sub.iloc[0]
 
-            β     = betas[t]["Mkt-RF"]
-            Re    = rf_annual + β * mktprem_annual
-            Rd    = abs(row["InterestExpense"]) / row["Debt"] if row["Debt"] else 0.0
-            Rd_at = Rd * (1 - row["tax_rate"])
-            netD  = row["Debt"] - row["Cash"]
-            E_val = row["EV"] - netD
-            tot   = (E_val + netD) or 1.0
-            wE    = E_val / tot
-            wD    = netD / tot
-            wacc  = wE * Re + wD * Rd_at
+            # 1) Compute Re using CAPM: rf + β·(market risk premium)
+            β = beta_dict["Mkt-RF"]
 
+            Re     = rf_annual + β * mktprem_annual  # already in decimal form
+
+            # 2) Compute after‐tax cost of debt
+            Rd     = abs(row["InterestExpense"]) / row["Debt"] if row["Debt"] else 0.0
+            Rd_at  = Rd * (1.0 - row["tax_rate"])      # row["tax_rate"] in decimal form
+
+            # 3) Weights of equity & debt
+            netD   = row["Debt"] - row["Cash"]
+            E_val  = row["EV"] - netD
+            tot    = (E_val + netD) or 1.0
+            wE     = E_val / tot
+            wD     = netD / tot
+
+            # 4) WACC as decimal
+            wacc   = wE * Re + wD * Rd_at
+
+            # 5) Append formatted percentages
             wacc_rows.append({
-                "Ticker":   t,
-                "Re (%)":   f"{Re*100:.2f}",
-                "Rdₐₜ (%)": f"{Rd_at*100:.2f}",
-                "wE (%)":   f"{wE*100:.1f}",
-                "wD (%)":   f"{wD*100:.1f}",
-                "WACC (%)": f"{wacc*100:.2f}",
+                "Ticker":    t,
+                "Re (%)":    f"{Re*100:.2f}",
+                "Rdₐₜ (%)":  f"{Rd_at*100:.2f}",
+                "wE (%)":    f"{wE*100:.1f}",
+                "wD (%)":    f"{wD*100:.1f}",
+                "WACC (%)":  f"{wacc*100:.2f}",
             })
 
         if wacc_rows:
             wacc_df = pd.DataFrame(wacc_rows).set_index("Ticker")
             st.markdown("#### 🧮 WACC by Company")
             st.dataframe(wacc_df)
-            # finally: remember this year and clear placeholders if needed
-        if do_message:
-            # the JS already hides each <div> after 5s, so no need for time.sleep()
-            st.session_state["last_year_wacc"] = sel_year
-        else:
-            # first‐ever run: just record the year, no flash
-            st.session_state["last_year_wacc"] = sel_year
-            # ── end FF-5 Betas, Errors & WACC block ─────────────────────────────────
+
+        # record the last‐used year so do_message only fires when it changes
+        st.session_state["last_year_wacc"] = sel_year
+
 
             # ─── 10) Footer ────────────────────────────────────────────────────────────
 st.markdown(
