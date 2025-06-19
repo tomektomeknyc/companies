@@ -13,7 +13,7 @@ import plotly.graph_objects as go
 
 
 # ─── 1) Streamlit page config ─────────────────────────────────
-st.set_page_config(page_title="🚀 Starship Finance Simulator", layout="centered")
+st.set_page_config(page_title="🚀 Starship Finance Simulator", layout="wide")
 
 # ─── 2) Inject external CSS ────────────────────────────────────
 with open("styles.css") as f:
@@ -615,7 +615,7 @@ st.dataframe(
         "ChangeNWC","InterestExpense",
         "EV","EV/EBITDA","Debt","Cash"
     ]],
-    use_container_width=True, height=300, width=0
+    use_container_width=True, height=300
 )
 
 # ─── 9 & 10) FF-5 Betas, Errors & WACC (always render if there’s at least one β) ─────────────────────
@@ -700,7 +700,7 @@ if method == "FF-5":
         if wacc_rows:
             wacc_df = pd.DataFrame(wacc_rows).set_index("Ticker")
             st.markdown("#### 🧮 WACC by Company")
-            st.dataframe(wacc_df, width = 0)
+            st.dataframe(wacc_df, use_container_width=True)
 # ── end FF-5 Betas, Errors & WACC block ─────────────────────────────────
 
 
