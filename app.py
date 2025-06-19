@@ -1,4 +1,5 @@
 # app.py
+import time
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -9,7 +10,10 @@ from regression_engine import compute_ff5_betas
 import os
 from regression_engine import compute_ff5_betas
 import plotly.graph_objects as go
+import uuid
 
+if "last_year_wacc" not in st.session_state:
+    st.session_state["last_year_wacc"] = None
 
 
 # ─── 1) Streamlit page config ─────────────────────────────────
@@ -669,16 +673,27 @@ if method == "FF-5":
         rf_annual      = (1 + monthly_rf)   ** 12 - 1
         mktprem_annual = (1 + monthly_mktrf) ** 12 - 1
 
-        # compute WACC
+      # Should we flash a message? Only if we *had* a last_year and it's different now.
+        last_year = st.session_state["last_year_wacc"]
+        do_message = (last_year is not None and last_year != sel_year)
+        placeholders = []
+
         wacc_rows = []
-        for t in betas.keys():     # only loop tickers for which you have betas
-                                   # DEBUG: print ticker and slider year
-            st.write(f"🔍 Recalculating WACC for {t} at Year={sel_year}")
-            sub = df.query("Ticker == @t and Year == @sel_year")
+        for t in betas.keys():     
+        # only loop tickers for which you have betas
+        # if year changed, flash one line per ticker
+            if do_message:
+                st.markdown(
+                    f'<div class="flash-message">🔍 Recalculating WACC for {t} at Year={sel_year}</div>',
+                    unsafe_allow_html=True
+                )
+
 
             sub = df.query("Ticker == @t and Year == @sel_year")
+
+           
             if sub.empty:
-                continue
+                    continue
             row = sub.iloc[0]
 
             β     = betas[t]["Mkt-RF"]
@@ -705,13 +720,16 @@ if method == "FF-5":
             wacc_df = pd.DataFrame(wacc_rows).set_index("Ticker")
             st.markdown("#### 🧮 WACC by Company")
             st.dataframe(wacc_df)
-# ── end FF-5 Betas, Errors & WACC block ─────────────────────────────────
+            # finally: remember this year and clear placeholders if needed
+        if do_message:
+            # the JS already hides each <div> after 5s, so no need for time.sleep()
+            st.session_state["last_year_wacc"] = sel_year
+        else:
+            # first‐ever run: just record the year, no flash
+            st.session_state["last_year_wacc"] = sel_year
+            # ── end FF-5 Betas, Errors & WACC block ─────────────────────────────────
 
-
-
-
-
-# ─── 10) Footer ────────────────────────────────────────────────────────────
+            # ─── 10) Footer ────────────────────────────────────────────────────────────
 st.markdown(
     """
     *FF-5 factor betas data courtesy of the [Kenneth R. French Data Library](
