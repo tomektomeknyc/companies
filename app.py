@@ -700,7 +700,7 @@ if method == "FF-5":
         if wacc_rows:
             wacc_df = pd.DataFrame(wacc_rows).set_index("Ticker")
             st.markdown("#### 🧮 WACC by Company")
-            st.dataframe(wacc_df, use_container_width=True)
+            st.dataframe(wacc_df)
 # ── end FF-5 Betas, Errors & WACC block ─────────────────────────────────
 
 
