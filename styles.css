@@ -216,3 +216,35 @@
   width: 100% !important;
   overflow-x: auto !important;
 }
+
+/* 1) Fix sidebar at 300px so content can grow into the rest of the screen */
+[data-testid="stSidebar"] {
+  width: 300px !important;
+  min-width: 300px !important;
+}
+
+/* 2) Make the main “block-container” truly fluid */
+[data-testid="stAppViewContainer"] .block-container {
+  max-width: none !important;
+  width: auto   !important;
+  margin: 0 auto !important;
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
+
+/* 3) Force charts & tables to expand to fill that fluid container */
+[data-testid="stPlotlyChart"] {
+  width: 100% !important;
+}
+[data-testid="stPlotlyChart"] > div {
+  width: 100% !important;
+}
+
+[data-testid="stDataFrame"] {
+  width: 100% !important;
+}
+[data-testid="stDataFrame"] > div {
+  width: 100% !important;
+  overflow-x: auto !important;
+}
+
