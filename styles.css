@@ -20,7 +20,8 @@
 /* ─── 3) Sidebar Styling ───────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {
   background: linear-gradient(135deg, var(--bg-panel), rgba(0,40,80,0.6)) !important;
-  color: var(--primary-cyan);
+  color: var(--primary-cyan); width: 300px !important;
+  min-width: 300px !important;
 }
 [data-testid="stSidebar"] .css-1d391kg, /* labels */
 [data-testid="stSidebar"] label {
@@ -182,18 +183,15 @@
   overflow-x: auto !important;
 }
 
-/* ─── 99) Responsive “block-container” ───────────────────────────────────── */
-/* allow the main content to flex with the window, up to a max width */
-/* — 99) Responsive “block-container” — */
+/* ─── Block container: full‐width and padded ────────────────────────── */
 .block-container {
-  /* let Streamlit’s own layout logic size this for you */
   width: auto !important;
   max-width: none !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-  padding-left: 8px !important;
-  padding-right: 8px !important;
+  margin: 0 auto !important;
+  padding-left: 24px !important;
+  padding-right: 24px !important;
 }
+
 
 
 /* on very narrow viewports, give a touch more side padding */
@@ -202,4 +200,19 @@
     padding-left: 16px !important;
     padding-right: 16px !important;
   }
+}
+/* ─── Charts & DataFrames: stretch full width ───────────────────────── */
+[data-testid="stPlotlyChart"] {
+  width: 100% !important;
+}
+[data-testid="stPlotlyChart"] > div {
+  width: 100% !important;
+}
+
+[data-testid="stDataFrame"] {
+  width: 100% !important;
+}
+[data-testid="stDataFrame"] > div {
+  width: 100% !important;
+  overflow-x: auto !important;
 }
