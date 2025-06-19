@@ -184,15 +184,18 @@
 }
 
 /* ─── Block container: full‐width and padded ────────────────────────── */
-.block-container {
+..block-container {
+  /* span the full viewport */
   width: 100% !important;
-  /* let it grow as wide as the viewport allows */
-  max-width: 95vw !important;
+  max-width: none !important;
   margin-left: auto !important;
   margin-right: auto !important;
-  padding-left: 8px !important;
-  padding-right: 8px !important;
+
+  /* a little breathing room on both sides */
+  padding-left: 24px !important;
+  padding-right: 24px !important;
 }
+
 
 
 
