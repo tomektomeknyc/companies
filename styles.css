@@ -232,10 +232,7 @@
 /* 2) Make the main “block-container” truly fluid */
 [data-testid="stAppViewContainer"] .block-container {
   max-width: none !important;
-  width: auto   !important;
-  margin: 0 auto !important;
-  padding-left: 24px !important;
-  padding-right: 24px !important;
+  /* … */
 }
 
 /* 3) Force charts & tables to expand to fill that fluid container */
@@ -260,7 +257,4 @@
   padding-left: 8px !important;
   padding-right: 8px !important;
 }
-[data-testid="stAppViewContainer"] .block-container {
-  max-width: none !important;
-  /* … */
-}
+
