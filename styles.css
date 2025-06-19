@@ -257,6 +257,10 @@
 /* ─── 10) Expand the main content area ───────────────────────────────── */
 [data-testid="stAppViewContainer"] > [data-testid="stMain"] {
   max-width: none !important;
-  padding-left: 24px !important;
-  padding-right: 24px !important;
+  padding-left: 8px !important;
+  padding-right: 8px !important;
+}
+[data-testid="stAppViewContainer"] .block-container {
+  max-width: none !important;
+  /* … */
 }
