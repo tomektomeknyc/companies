@@ -20,8 +20,7 @@
 /* ─── 3) Sidebar Styling ───────────────────────────────────────────────────── */
 [data-testid="stSidebar"] {
   background: linear-gradient(135deg, var(--bg-panel), rgba(0,40,80,0.6)) !important;
-  color: var(--primary-cyan); width: 300px !important;
-  min-width: 300px !important;
+  color: var(--primary-cyan);
 }
 [data-testid="stSidebar"] .css-1d391kg, /* labels */
 [data-testid="stSidebar"] label {
@@ -177,84 +176,15 @@
     inset 0 0 8px rgba(0,255,255,0.2) !important;
   border: 1px solid var(--primary-cyan) !important;
 }
-/* make each dataframe div fill its container and scroll internally if needed */
-[data-testid="stDataFrame"] > div {
-  width:100% !important;
-  overflow-x: auto !important;
+/* ─── Flash‐message fade‐out ─────────────────────────────────────────── */
+@keyframes flashFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
-/* ─── Block container: full‐width and padded ────────────────────────── */
-..block-container {
-  /* span the full viewport */
-  width: 100% !important;
-  max-width: none !important;
-  margin-left: auto !important;
-  margin-right: auto !important;
-
-  /* a little breathing room on both sides */
-  padding-left: 14px !important;
-  padding-right: 14px !important;
-}
-
-
-
-
-
-/* on very narrow viewports, give a touch more side padding */
-@media (max-width: 800px) {
-  .block-container {
-    padding-left: 16px !important;
-    padding-right: 16px !important;
-  }
-}
-/* ─── Charts & DataFrames: stretch full width ───────────────────────── */
-[data-testid="stPlotlyChart"] {
-  width: 100% !important;
-}
-[data-testid="stPlotlyChart"] > div {
-  width: 100% !important;
-}
-
-[data-testid="stDataFrame"] {
-  width: 100% !important;
-}
-[data-testid="stDataFrame"] > div {
-  width: 100% !important;
-  overflow-x: auto !important;
-}
-
-/* 1) Fix sidebar at 300px so content can grow into the rest of the screen */
-[data-testid="stSidebar"] {
-  width: 300px !important;
-  min-width: 300px !important;
-}
-
-/* 2) Make the main “block-container” truly fluid */
-[data-testid="stAppViewContainer"] .block-container {
-  max-width: none !important;
-  /* … */
-}
-
-/* 3) Force charts & tables to expand to fill that fluid container */
-[data-testid="stPlotlyChart"] {
-  width: 100% !important;
-}
-[data-testid="stPlotlyChart"] > div {
-  width: 100% !important;
-}
-
-[data-testid="stDataFrame"] {
-  width: 100% !important;
-}
-[data-testid="stDataFrame"] > div {
-  width: 100% !important;
-  overflow-x: auto !important;
-}
-
-/* ─── 10) Expand the main content area ───────────────────────────────── */
-[data-testid="stAppViewContainer"] > [data-testid="stMain"] {
-  max-width: none !important;
-  padding-left: 8px !important;
-  padding-right: 8px !important;
+.flash-message {
+  animation: flashFadeOut 5s ease-out forwards;
+  /* optional: give it a bit of margin so it doesn’t crowd */
+  margin-bottom: 0.5rem;
 }
 
