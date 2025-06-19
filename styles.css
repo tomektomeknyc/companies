@@ -187,4 +187,15 @@
   /* optional: give it a bit of margin so it doesn’t crowd */
   margin-bottom: 0.5rem;
 }
+/* ─── Responsive “block–container” override ───────────────────────────── */
+[data-testid="stAppViewContainer"] .block-container {
+  max-width: none !important;
+  width: auto !important;
+  margin: 0 auto !important;
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
+
+
+
 
