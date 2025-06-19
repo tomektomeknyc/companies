@@ -137,10 +137,6 @@
 }
 
 
-/*- Only new code----*/
-
-/* ─── Group each metrics‐row into a matrix panel ─────────────────────────────── */
-
 /* 1) Give each row a panel background */
 .stMetricContainer {
   background: var(--bg-panel) !important;
@@ -188,13 +184,47 @@
   margin-bottom: 0.5rem;
 }
 /* ─── Responsive “block–container” override ───────────────────────────── */
-[data-testid="stAppViewContainer"] .block-container {
+/* clamp the main content area so it never gets wider than ~1300px */
+.block-container {
+  max-width: 1300px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* give a little breathing room on mobile/narrow screens */
+@media (max-width: 800px) {
+  .block-container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* ─── Expand the main content area to fill all available width ───────────────── */
+[data-testid="stAppViewContainer"] > [data-testid="stMain"] {
   max-width: none !important;
   width: auto !important;
   margin: 0 auto !important;
   padding-left: 24px !important;
   padding-right: 24px !important;
 }
+
+/* 3) Force charts & tables to expand to fill that fluid container */
+[data-testid="stPlotlyChart"] {
+  width: 100% !important;
+}
+[data-testid="stPlotlyChart"] > div {
+  width: 100% !important;
+}
+
+[data-testid="stDataFrame"] {
+  width: 100% !important;
+}
+[data-testid="stDataFrame"] > div {
+  width: 100% !important;
+  overflow-x: auto !important;
+}
+
+
 
 
 
