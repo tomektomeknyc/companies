@@ -671,7 +671,11 @@ if method == "FF-5":
 
         # compute WACC
         wacc_rows = []
-        for t in betas.keys():               # only loop tickers for which you have betas
+        for t in betas.keys():     # only loop tickers for which you have betas
+                                   # DEBUG: print ticker and slider year
+            st.write(f"🔍 Recalculating WACC for {t} at Year={sel_year}")
+            sub = df.query("Ticker == @t and Year == @sel_year")
+
             sub = df.query("Ticker == @t and Year == @sel_year")
             if sub.empty:
                 continue
