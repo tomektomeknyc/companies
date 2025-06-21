@@ -11,18 +11,52 @@ import os
 from regression_engine import compute_ff5_betas
 import plotly.graph_objects as go
 import uuid
-
-if "last_year_wacc" not in st.session_state:
-    st.session_state["last_year_wacc"] = None
-
+from stock_returns import fetch_daily_returns  # to read your saved stock‐return CSVs
+import numpy as np 
 
 # ─── 1) Streamlit page config ─────────────────────────────────
 st.set_page_config(page_title="🚀 Starship Finance Simulator", layout="wide")
-
 # ─── 2) Inject external CSS ────────────────────────────────────
 with open("styles.css") as f:
     css = f.read()
 st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+
+if "market_returns" not in st.session_state:
+    region_indices = {
+        "US": ".SPX",     # S&P 500
+        "AU": ".AXJO",  # ASX 200 TR
+        "NZ": ".NZ50",    # NZX 50 TR
+        "DE": ".GDAXI",   # DAX
+    }
+    mkt_returns: dict[str, pd.Series] = {}
+    for region, ric in region_indices.items():
+        fname = ric.lstrip(".").replace(".", "_") + "_market_returns.csv"
+        path  = os.path.join("attached_assets", fname)
+        if os.path.exists(path):
+            df_mkt = pd.read_csv(path, parse_dates=True, index_col=0)
+            mkt_returns[region] = df_mkt["MarketReturn"]
+        else:
+            st.sidebar.warning(f"⚠️ Missing market‐returns file for {region}: {path}")
+    st.session_state["market_returns"] = mkt_returns
+
+
+
+def compute_pure_capm_beta(stock_ret: pd.Series, market_ret: pd.Series) -> float:
+    """
+    Compute β = Cov(Stock, Market) / Var(Market)
+    on their overlapping dates.
+    """
+    df_combined = pd.concat(
+        [stock_ret.rename("stock"), market_ret.rename("market")],
+        axis=1,
+    ).dropna()
+    cov_sm = df_combined["stock"].cov(df_combined["market"])
+    var_m  = df_combined["market"].var()
+    return cov_sm / var_m if var_m else 0.0
+
+if "last_year_wacc" not in st.session_state:
+    st.session_state["last_year_wacc"] = None
+
 
 # ─── 1) Your existing loader/grabber ────────────────────────────────────────────
 YEAR_ROW = 10
@@ -228,13 +262,13 @@ st.sidebar.markdown(
     "Move the slider down to see their multiples."
 )
 
-########################
-    # ─── 3a) Choose Estimation Method ─────────────────────────────────────────────
-method = st.sidebar.radio(
-        "⚙️ Estimation Method",
-        options=["Historical", "FF-5", "CAPM"],
-        index=0,
-    )
+# ─── 3a) Choose Estimation Methods ─────────────────────────────────────────────
+methods = st.sidebar.multiselect(
+    "⚙️ Estimation Methods",
+    options=["Historical", "FF-5", "CAPM"],
+    default=["Historical"],
+)
+
 
 
 def ticker_to_region(ticker: str) -> str:
@@ -256,7 +290,8 @@ def ticker_to_region(ticker: str) -> str:
 
 
 # ─── FF-5: download, compute betas & errors, then WACC ─────────────────
-if method == "FF-5":
+if "FF-5" in methods:
+
     st.sidebar.markdown("### 🔢 Download FF-5 Factors")
     if st.sidebar.button("📥 Fetch FF-5 Data"):
         ff5_results: dict[str, pd.DataFrame] = {}
@@ -315,31 +350,46 @@ if method == "FF-5":
             # 3) Store in session
             st.session_state["ff5_betas"]  = betas_by_ticker
             st.session_state["ff5_errors"] = errors_by_ticker
-
-        # Pull our computed betas back out
-           # betas = st.session_state.get("ff5_betas", {})
             
-
-
             # Only flash “recalculating” if slider‐year really changed
             last_year   = st.session_state.get("last_year_wacc")
             do_message  = (last_year is not None and last_year != sel_year)
 
-# ─── 3c) CAPM regression ─────────────────────────────────────────────────────────
-elif method == "CAPM":
-    st.sidebar.markdown("### 📈 Run CAPM Regression")
+# ─── 3c) Pure CAPM regression ───────────────────────────────────────────
+if "CAPM" in methods:
+    st.sidebar.markdown("### 📈 Run Pure-CAPM Regression")
     if st.sidebar.button("📥 Fetch Returns & Compute β"):
+        mkt_returns = st.session_state["market_returns"]
         capm_results: dict[str, dict[str, float]] = {}
         for ticker in sel_tickers:
-            with st.spinner(f"Fetching returns and regressing CAPM for {ticker}…"):
+            with st.spinner(f"Computing pure-CAPM β for {ticker}…"):
+                # 1) Load your stock returns
+                csv_path = f"attached_assets/returns_{ticker.replace('.', '_')}.csv"
                 try:
-                    beta, error = compute_capm_beta(ticker)
-                    capm_results[ticker] = {"beta": beta, "error": error}
+                    df_ret = pd.read_csv(csv_path, parse_dates=True, index_col=0)
+                    stock_ret = df_ret["Return"]
+                except FileNotFoundError:
+                    st.sidebar.error(f"❌ No returns CSV for {ticker}, run fetch first")
+                    continue
+
+                # 2) Pick the market series for this ticker’s region
+                region = ticker_to_region(ticker)
+                market_ret = mkt_returns.get(region)
+                if market_ret is None:
+                    st.sidebar.error(f"❌ No market returns for region {region}")
+                    continue
+
+                # 3) Compute pure-CAPM beta
+                try:
+                    beta = compute_pure_capm_beta(stock_ret, market_ret)
+                    capm_results[ticker] = {"beta": beta}
                 except Exception as e:
                     st.sidebar.error(f"❌ {ticker}: {e}")
+
         if capm_results:
-            st.sidebar.success("✅ CAPM betas computed")
+            st.sidebar.success("✅ Pure-CAPM betas computed")
             st.session_state["capm"] = capm_results
+
 #########
 
 st.sidebar.markdown("### 🎛 Simulations")
@@ -625,46 +675,76 @@ st.dataframe(
     ]],
     use_container_width=True, height=300
 )
+# ─── 9) Prepare β‐series for FF-5 and Pure-CAPM ────────────────────────────────
 
-# ─── 9 & 10) FF-5 Betas, Errors & WACC (always render if there’s at least one β) ─────────────────────
-if method == "FF-5":
-    # 9-0) grab all cached betas/errors
-    all_betas  = st.session_state.get("ff5_betas", {})
-    all_errors = st.session_state.get("ff5_errors", {})
+# 9-0) Grab everything from session (empty dict if missing)
+all_ff5_betas = st.session_state.get("ff5_betas", {})
+all_capm      = st.session_state.get("capm", {})
 
-    # 9-1) filter for the tickers the user actually selected
-    betas  = {t: all_betas[t]  for t in sel_tickers if t in all_betas}
-    errors = {t: all_errors[t] for t in sel_tickers if t in all_errors}
+# 9-1) Filter to only the tickers the user actually selected
+betas = {
+    t: all_ff5_betas[t]
+    for t in sel_tickers
+    if t in all_ff5_betas
+}
 
-    # 9-2) Regression‐errors table
-    if errors:
-        st.markdown("#### FF-5 Regression Errors")
-        df_err = pd.DataFrame.from_dict(errors, orient="index")
-        st.dataframe(df_err.style.format({
-            "r_squared":"{:.2f}",
-            "alpha":    "{:.4f}",
-        }))
+capm = {
+    t: all_capm[t]
+    for t in sel_tickers
+    if t in all_capm
+}
 
-    # 9-3) β-chart (use same colors as your other plots)
-    if betas:
-        st.markdown("#### FF-5 Factor Betas")
-        fig = go.Figure()
-        for ticker, bdict in betas.items():
+# (Optional) show FF-5 regression errors if you like:
+errors = {
+    t: st.session_state.get("ff5_errors", {}).get(t)
+    for t in sel_tickers
+    if t in st.session_state.get("ff5_errors", {})
+}
+if errors:
+    st.markdown("#### FF-5 Regression Errors")
+    df_err = pd.DataFrame.from_dict(errors, orient="index")
+    st.dataframe(df_err.style.format({
+        "r_squared": "{:.2f}",
+        "alpha":     "{:.4f}",
+    }))
+
+
+# — 9-3) Combined β-chart (FF-5 & Pure-CAPM)
+if ("FF-5" in methods and betas) or ("CAPM" in methods and capm):
+    st.markdown("#### Factor Betas: FF-5 vs Pure-CAPM")
+    fig = go.Figure()
+
+    # FF-5 traces
+    if "FF-5" in methods and betas:
+        for t, bdict in betas.items():
             fig.add_trace(go.Scatter(
                 x=list(bdict.keys()),
                 y=list(bdict.values()),
                 mode="lines+markers",
-                name=ticker,
-                line  = dict(color=color_map[ticker]),
-                marker= dict(color=color_map[ticker]),
+                name=f"{t} (FF-5)",
+                line=dict(color=color_map[t]),
+                marker=dict(symbol="circle", color=color_map[t]),
             ))
-        fig.update_layout(
-            title="FF-5 Factor Betas",
-            xaxis_title="Factor",
-            yaxis_title="β Coefficient",
-            legend_title="Ticker",
-        )
-        st.plotly_chart(fig, use_container_width=True, key="ff5_betas_chart")
+
+    # Pure-CAPM traces
+    if "CAPM" in methods and capm:
+        for t, cres in capm.items():
+            fig.add_trace(go.Scatter(
+                x=["Mkt-RF"],
+                y=[cres["beta"]],
+                mode="markers",
+                name=f"{t} (CAPM)",
+                marker=dict(symbol="x", size=12, color=color_map[t]),
+            ))
+
+    fig.update_layout(
+        xaxis_title="Factor",
+        yaxis_title="β Coefficient",
+        legend_title="Ticker & Model",
+    )
+    st.plotly_chart(fig, use_container_width=True, key="betas_combined_chart")
+
+
 
     # 10) WACC by company (only if there’s at least one β)
     if betas:
@@ -739,10 +819,11 @@ if method == "FF-5":
             # ─── 10) Footer ────────────────────────────────────────────────────────────
 st.markdown(
     """
+    All figures are reported in local currency (millions) for each company.<br>
     *FF-5 factor betas data courtesy of the [Kenneth R. French Data Library](
     https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/index.html).*
 
-    Github: https://github.com/tomektomeknyc/companies
+    Source code at Github: https://github.com/tomektomeknyc/companies
 
     """,
     unsafe_allow_html=True,
