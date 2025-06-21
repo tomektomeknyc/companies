@@ -5,3 +5,5 @@ openpyxl
 beautifulsoup4
 requests
 statsmodels
+python-dotenv
+refinitiv-dataplatform>=1.0.0
