@@ -1,5 +1,5 @@
 # stock_returns.py
-import refinitiv.dataplatform.eikon as ek
+#import refinitiv.dataplatform.eikon as ek
 import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
