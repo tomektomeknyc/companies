@@ -1,18 +1,19 @@
 # stock_returns.py
-#import refinitiv.dataplatform.eikon as ek
+
+import streamlit as st
+import refinitiv.dataplatform.eikon as ek
 import pandas as pd
 from datetime import datetime, timedelta
 from pathlib import Path
-from dotenv import load_dotenv
-import os
 
-# Load API key from .env
-load_dotenv()
-API_KEY = os.getenv("REFINITIV_APP_KEY")
-if not API_KEY:
-    raise EnvironmentError("REFINITIV_APP_KEY not found in .env")
-
-ek.set_app_key(API_KEY)
+# ─── Load API key from Streamlit Secrets ───────────────────────────────────────
+try:
+    ek.set_app_key(st.secrets["REFINITIV_APP_KEY"])
+except KeyError:
+    st.warning(
+        "REFINITIV_APP_KEY not found in Streamlit Secrets; "
+        "live Refinitiv calls will be disabled."
+    )
 
 # ─── Fetch Daily Returns ──────────────────────────────────────────────────────
 def fetch_daily_returns(ticker: str, years: int = 10) -> pd.DataFrame:
@@ -26,22 +27,21 @@ def fetch_daily_returns(ticker: str, years: int = 10) -> pd.DataFrame:
         end_date=end_date.strftime("%Y-%m-%d"),
         interval="daily"
     )
-
     if df is None or df.empty:
         raise ValueError(f"No data returned for {ticker}")
 
     df["Return"] = df["CLOSE"].pct_change()
     df.dropna(subset=["Return"], inplace=True)
-
     return df
 
 # ─── Save to CSV ──────────────────────────────────────────────────────────────
 def save_returns_to_csv(ticker: str, df: pd.DataFrame):
     Path("attached_assets").mkdir(exist_ok=True)
-    path = f"attached_assets/returns_{ticker.replace('.', '_')}.csv"
+    path = Path("attached_assets") / f"returns_{ticker.replace('.', '_')}.csv"
     df.to_csv(path)
     print(f"✅ Saved returns to: {path}")
     return path
+
 
 # ─── Main Function to Loop Through Tickers ────────────────────────────────────
 def main():
