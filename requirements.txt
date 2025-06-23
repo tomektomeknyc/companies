@@ -6,4 +6,6 @@ beautifulsoup4
 requests
 statsmodels
 python-dotenv
+scipy<1.11
+
 
