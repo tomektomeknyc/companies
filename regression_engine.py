@@ -48,9 +48,6 @@ def compute_capm_beta(stock_returns: pd.Series, ff5_data: pd.DataFrame):
     
     return alpha, beta, r_squared
 
-def compute_ff5_betas(stock_returns: pd.Series, ff5_data: pd.DataFrame):
-    # Similar implementation using LinearRegression
-    # ... (convert your existing FF5 logic)
 def compute_ff5_betas(stock_returns: pd.Series, ff5_data: pd.DataFrame) -> dict:
     # 1) Ensure all factor columns are numeric
     factors = ff5_data[["Mkt-RF", "SMB", "HML", "RMW", "CMA", "RF"]].apply(
