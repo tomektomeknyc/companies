@@ -1,8 +1,8 @@
 streamlit
 pandas
 numpy
-scipy==1.11.4
-statsmodels==0.13.5
+scipy
+statsmodels==0.1.2
 plotly
 openpyxl
 beautifulsoup4
