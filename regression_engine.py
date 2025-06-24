@@ -32,6 +32,12 @@ def compute_ff5_betas(stock_returns: pd.Series, ff5_data: pd.DataFrame):
     
     # Align the data
     aligned_data = pd.concat([stock_returns, ff5_data], axis=1, join='inner')
+    
+    # Convert all columns to numeric, replacing non-numeric values with NaN
+    for col in aligned_data.columns:
+        aligned_data[col] = pd.to_numeric(aligned_data[col], errors='coerce')
+    
+    # Drop rows with any NaN values
     aligned_data = aligned_data.dropna()
     
     if len(aligned_data) < 50:  # Need enough data points
