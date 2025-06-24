@@ -1,9 +1,11 @@
-streamlit
-pandas
-plotly
-openpyxl
-beautifulsoup4
-statsmodels==0.14.0
+streamlit==1.46.0
+pandas==2.2.2
+plotly==6.1.2
+openpyxl==3.1.5
+beautifulsoup4==4.13.4
+requests==2.32.4
+statsmodels==0.14.1
+python-dotenv==1.1.0
 scipy==1.11.3
 
 
